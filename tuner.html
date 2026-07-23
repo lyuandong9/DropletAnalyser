@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Detection Parameter Tuner</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0d0d0d;color:#ccc;font-family:Segoe UI,sans-serif;display:flex;height:100vh;overflow:hidden}
+.sidebar{width:300px;background:#1a1a1a;padding:12px;overflow-y:auto;border-right:1px solid #333}
+.sidebar h2{font-size:14px;color:#fff;margin-bottom:8px}
+.param{margin-bottom:8px}
+.param label{font-size:11px;color:#888;display:block}
+.param .range-row{display:flex;gap:6px;align-items:center;margin-top:2px}
+.param .range-row input[type=range]{flex:1}
+.param .range-row .val{width:45px;text-align:center;font-size:10px;color:#0f0}
+button{width:100%;padding:8px;margin:6px 0;background:#106040;color:#fff;border:none;border-radius:4px;font-size:12px;cursor:pointer;font-weight:bold}
+button:hover{background:#1a8a60}
+.zoom-bar{position:absolute;right:12px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:4px;z-index:10}
+.zoom-bar button{width:32px;height:32px;background:#2a2a2a;color:#fff;border:1px solid #444;border-radius:3px;font-size:16px;cursor:pointer;line-height:28px;margin:0}
+.zoom-bar span{text-align:center;font-size:10px;color:#aaa}
+.main{flex:1;display:flex;align-items:center;justify-content:center;background:#111;position:relative}
+canvas{display:block}
+#info{position:absolute;top:8px;left:8px;background:rgba(0,0,0,0.7);padding:4px 10px;border-radius:3px;font-size:11px;color:#0f0;pointer-events:none}
+#zl{text-align:center;font-size:10px;color:#aaa;display:block}
+</style></head><body>
+
+<div class="sidebar">
+<h2>Median Path Tuner</h2>
+<label style="font-size:10px;color:#666">Image: 0000.bmp (1999×284) | Median bg from 301 frames | Tuned: T=6 MD=9 MA=6 MO=1 PT=0.04 SF=1.0</label>
+
+<div class="param"><label>Threshold (T)</label>
+<div class="range-row">
+<input type="range" id="T" min="1" max="20" step="1" value="6" oninput="document.getElementById('Tv').textContent=this.value; apply()">
+<span class="val" id="Tv">6</span></div></div>
+
+<div class="param"><label>Min Distance (pixels)</label>
+<div class="range-row">
+<input type="range" id="MD" min="3" max="15" step="1" value="9" oninput="document.getElementById('MDv').textContent=this.value; apply()">
+<span class="val" id="MDv">9</span></div></div>
+
+<div class="param"><label>Min Area (pixels)</label>
+<div class="range-row">
+<input type="range" id="MA" min="3" max="30" step="1" value="6" oninput="document.getElementById('MAv').textContent=this.value; apply()">
+<span class="val" id="MAv">6</span></div></div>
+
+<div class="param"><label>Morph Open Iterations</label>
+<div class="range-row">
+<input type="range" id="MO" min="0" max="3" step="1" value="1" oninput="document.getElementById('MOv').textContent=this.value; apply()">
+<span class="val" id="MOv">1</span></div></div>
+
+<div class="param"><label>Peak Threshold (rel)</label>
+<div class="range-row">
+<input type="range" id="PT" min="0.01" max="0.10" step="0.01" value="0.04" oninput="document.getElementById('PTv').textContent=this.value; apply()">
+<span class="val" id="PTv">0.04</span></div></div>
+
+<div class="param"><label>Scale Factor (visual only)</label>
+<div class="range-row">
+<input type="range" id="SF" min="0.5" max="3.0" step="0.1" value="1.0" oninput="document.getElementById('SFv').textContent=this.value; apply()">
+<span class="val" id="SFv">1.0</span></div></div>
+
+<label style="font-size:10px;margin-top:4px"><input type="checkbox" id="use_median" checked onchange="apply()"> Use Temporal Median</label>
+
+<button onclick="apply()">Apply Parameters</button>
+<div style="font-size:10px;margin-top:4px;color:#5f5" id="stats"></div>
+</div>
+
+<div class="main" id="main">
+<canvas id="c"></canvas>
+<div id="info">Loading...</div>
+<div class="zoom-bar">
+  <button onclick="zoomIn()">+</button>
+  <span id="zl">100%</span>
+  <button onclick="zoomOut()">−</button>
+  <button onclick="resetZoom()">⌂</button>
+</div>
+</div>
+
+<script>
+let img = new Image(); img.src = '/tuner_image.jpg';
+let dets = []; let pending = false;
+let zoom = 1, px = 0, py = 0;
+let canvasW = 1999, canvasH = 284;
+const c = document.getElementById('c');
+
+img.onload = () => { canvasW = img.width; canvasH = img.height; resetZoom(); apply(); };
+
+function placeCanvas() {
+  c.style.left = px + 'px'; c.style.top = py + 'px';
+  c.style.width = (canvasW * zoom) + 'px'; c.style.height = (canvasH * zoom) + 'px';
+}
+
+async function apply() {
+  if (pending) return; pending = true;
+  let params = {
+    T: +document.getElementById('T').value,
+    MD: +document.getElementById('MD').value,
+    MA: +document.getElementById('MA').value,
+    MO: +document.getElementById('MO').value,
+    PT: +document.getElementById('PT').value,
+    SF: +document.getElementById('SF').value,
+    max_area: 350,
+    use_median: document.getElementById('use_median').checked
+  };
+  try {
+    let r = await fetch('/api/tuner_detect', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(params)});
+    dets = (await r.json()).droplets; draw();
+    document.getElementById('stats').innerHTML = dets.length + ' droplets' +
+      (dets.length>0 ? '<br>Small: '+dets.filter(d=>d.area_px<12).length+' | Med: '+dets.filter(d=>d.area_px>=12&&d.area_px<50).length+' | Large: '+dets.filter(d=>d.area_px>=50).length : '');
+  } catch(e) { console.error(e); }
+  pending = false;
+}
+
+function draw() {
+  let cx=c.getContext('2d'); c.width=canvasW; c.height=canvasH;
+  cx.clearRect(0,0,canvasW,canvasH); cx.drawImage(img,0,0,canvasW,canvasH);
+  let cols=['#0f0','#ff0','#0ff','#f0f','#08f','#f80','#8f0','#f00'];
+  dets.forEach((d,i) => {
+    cx.strokeStyle = cols[d.id%8]; cx.lineWidth = 1.5;
+    let pts = d.contour;
+    if (pts && pts.length>=3) {
+      cx.beginPath(); cx.moveTo(pts[0][0],pts[0][1]);
+      for(let k=1;k<pts.length;k++) cx.lineTo(pts[k][0],pts[k][1]);
+      cx.closePath(); cx.stroke();
+    }
+  });
+  placeCanvas();
+  document.getElementById('info').textContent = dets.length + ' droplets';
+}
+
+// Zoom
+c.addEventListener('wheel', e => {
+  e.preventDefault(); let old = zoom;
+  zoom = Math.max(0.3, Math.min(10, zoom * (e.deltaY < 0 ? 1.25 : 0.8)));
+  px = e.clientX - (e.clientX - px) * (zoom / old);
+  py = e.clientY - (e.clientY - py) * (zoom / old);
+  document.getElementById('zl').textContent = (zoom*100).toFixed(0)+'%'; placeCanvas();
+});
+let ds = null;
+c.addEventListener('mousedown', e => { ds = {x:e.clientX,y:e.clientY,px,py}; });
+c.addEventListener('mousemove', e => {
+  if (!ds) return;
+  let dx=e.clientX-ds.x, dy=e.clientY-ds.y;
+  if (Math.abs(dx)>3||Math.abs(dy)>3) { px=ds.px+dx; py=ds.py+dy; placeCanvas(); }
+});
+c.addEventListener('mouseup', () => { ds = null; });
+function zoomIn() { zoom=Math.min(10,zoom*1.5); document.getElementById('zl').textContent=(zoom*100).toFixed(0)+'%'; placeCanvas(); }
+function zoomOut() { zoom=Math.max(0.3,zoom*0.667); document.getElementById('zl').textContent=(zoom*100).toFixed(0)+'%'; placeCanvas(); }
+function resetZoom() {
+  let m=document.getElementById('main');
+  zoom = Math.min(m.clientWidth/canvasW, m.clientHeight/canvasH, 1.0);
+  px = Math.max(0,(m.clientWidth-canvasW*zoom)/2);
+  py = Math.max(0,(m.clientHeight-canvasH*zoom)/2);
+  document.getElementById('zl').textContent=(zoom*100).toFixed(0)+'%'; placeCanvas();
+}
+</script>
+</body></html>
