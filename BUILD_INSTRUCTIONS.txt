@@ -1,0 +1,20 @@
+Building the Standalone Application
+====================================
+
+Prerequisites:
+  - Python 3.11+ installed (3.11 recommended)
+  - All dependencies installed (pip install -r requirements.txt)
+
+Build the EXE:
+  pyinstaller build.spec
+
+This creates:  dist\ImageIdentification.exe
+
+Install the EXE on another computer:
+  - Copy the entire dist\ImageIdentification\ folder to the target PC
+  - Run ImageIdentification.exe directly — no Python required
+  - The app saves settings and output to the user's home folder
+
+To run without building (for development):
+  python main.py
+  Or double-click start.bat

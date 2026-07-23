@@ -1,0 +1,31 @@
+# Core
+numpy>=1.24.0
+scipy>=1.11.0
+pandas>=2.0.0
+
+# Image Processing
+opencv-python>=4.8.0
+scikit-image>=0.21.0
+Pillow>=10.0.0
+
+# Deep Learning
+torch>=2.0.0
+torchvision>=0.15.0
+ultralytics>=8.2.0
+onnxruntime>=1.15.0
+onnx>=1.14.0
+
+# GUI
+PyQt6>=6.5.0
+pyqtgraph>=0.13.0
+
+# Excel Export
+openpyxl>=3.1.0
+XlsxWriter>=3.1.0
+
+# Packaging
+pyinstaller>=6.0.0
+
+# Utilities
+tqdm>=4.65.0
+matplotlib>=3.7.0
